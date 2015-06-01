@@ -25,7 +25,7 @@ def create_engine(usr, password, database, host='127.0.0.1', port='3306', **kw):
 	if engine is not None:
 		raise DbError('Engine is already initialized.')
 	params = dict(user=usr, password=password, database=database, host=host, port=port)
-	defaults = dict(use_unicode=True, charset='utf8', collation='utf8_general_ci', auto_commit=False)
+	defaults = dict(use_unicode=True, charset='utf8', collation='utf8_general_ci', autocommit=False)
 	for k, v in defaults.iteritems():
 		params[k] = kw.pop(k, v)
 	params.update(kw)
@@ -51,13 +51,32 @@ def with_connection(func):
 	@functools.wraps(func)
 	def _wrapper(*args, **kw):
 		with connection():
-			return func(args, kw)
+			return func(*args, **kw)
 	return _wrapper
 
 #transaction
 # use ages:
 #	db.transaction()
 def transaction():
+	'''
+	>>> def update_profile(id, name, rollback):
+    ...     u = dict(id=id, name=name, email="%s@test.org" % name, passwd=name, last_modified=time.time())
+    ...     insert('user', **u)
+    ...     r = update('update user set passwd=? where id=?', name.upper(), id)
+    ...     if rollback:
+    ...         raise StandardError('will cause rollback...')
+    >>> with transaction():
+    ...     update_profile(900301, 'Python', False)
+    >>> select_one('select * from user where id=?', 900301)[name]
+    u'Python'
+    >>> with transaction():
+    ...     update_profile(900302, 'Ruby', True)
+    Traceback (most recent call last):
+      ...
+    StandardError: will cause rollback...
+    >>> select('select * from user where id=?', 900302)
+    []
+    '''
 	return _TransactionCtx()
 
 #with_transaction
@@ -69,10 +88,29 @@ def transaction():
 #	with transaction():
 #		do_some_operation()
 def with_transaction(func):
+	'''
+    A decorator that makes function around transaction.
+    >>> @with_transaction
+    ... def update_profile(id, name, rollback):
+    ...     u = dict(id=id, name=name, email='%s@test.org' % name, passwd=name, last_modified=time.time())
+    ...     insert('user', **u)
+    ...     r = update('update user set passwd=? where id=?', name.upper(), id)
+    ...     if rollback:
+    ...         raise StandardError('will cause rollback...')
+    >>> update_profile(8080, 'Julia', False)
+    >>> select_one('select * from user where id=?', 8080)[passwd]
+    u'JULIA'
+    >>> update_profile(9090, 'Robert', True)
+    Traceback (most recent call last):
+      ...
+    StandardError: will cause rollback...
+    >>> select('select * from user where id=?', 9090)
+    []
+    '''
 	@functools.wraps(func)
 	def _wrapper(*args, **kw):
 		with transaction():
-			return func(args, kw)
+			return func(*args, **kw)
 	return _wrapper
 
 # create_table
@@ -94,7 +132,7 @@ def _select(sql, isOnlyOne, *args):
 	global _db_ctx
 	cursor = None
 	try :
-		cursor = _db_ctx.engine().execute(sql, args)
+		cursor = _db_ctx.engine().execute(sql, *args)
 		if cursor.description:
 			names = [ x[0] for x in cursor.description]
 		if isOnlyOne:
@@ -108,21 +146,21 @@ def _select(sql, isOnlyOne, *args):
 			cursor.close()
 
 def select_one(sql, *args):
-	return _select(sql, True, args)
+	return _select(sql, True, *args)
 
 # select
 # use ages:
 #	db.select('select * from user')
 #return: a sql running resault list
 def select(sql, *args):
-	return _select(sql, False, args)
+	return _select(sql, False, *args)
 
-@with_transaction
+@with_connection
 def _update(sql, *args):
 	global _db_ctx
 	cursor = None
 	try :
-		cursor = _db_ctx.engine().execute(sql, args)
+		cursor = _db_ctx.engine().execute(sql, *args)
 		return cursor.rowcount
 	finally:
 		if cursor:
@@ -145,7 +183,7 @@ def update(table, where, sets):
 	return _update(sql, *args)
 
 def update(sql, *args):
-	return _update(sql, args)
+	return _update(sql, *args)
 
 # insert
 # execute insert operation
@@ -175,25 +213,28 @@ class _Engine(object):
 		super(_Engine, self).__init__()
 		self._connect = connect
 	def connect(self):
-		return self._connect
+		return self._connect()
 	def cursor(self):
 		if self._connect is None :
 			raise DBError('don\'t connect to database')
-		return self._connect.cursor()
+		self.con = self._connect()
+		self._cursor = self.con.cursor()
+		return self.cursor
 	def cleanup(self):
-		if self._connect:
-			connection = self._connection
-			self._connection = None
-			logging.info('close connection <%s>...' % hex(id(connection)))
-			connection.close()
+		if self.con:
+			_connection = self.con
+			self.con = None
+			logging.info('close connection <%s>...' % hex(id(_connection)))
+			_connection.close()
+			self.cursor = None
 	def execute(self, sql, *args):
-		cursor = None
 		sql = sql.replace('?', '%s')
 		logging.info('SQL: %s, ARGS: %s' % (sql, args))
 		try:
-			cursor = self._connect.cursor()
-			cursor.execute(sql, args)
-			return cursor
+			self.con = self._connect()
+			self._cursor = self.con.cursor()
+			self._cursor.execute(sql, *args)
+			return self._cursor
 		except Exception, e:
 			raise
 		else:
@@ -201,20 +242,20 @@ class _Engine(object):
 		finally:
 			pass
 	def commit(self):
-		if self._connect is None:
+		if self._connect is None or self.con is None:
 			raise DBError('don\'t connect to database')
 		try :
-			self._connect.commit()
+			self.con.commit()
 		except:
 			logging.warning('commit failed. try rollback...')
-			self._connect.rollback()
+			self.con.rollback()
 			logging.warning('rollback ok.')
 			raise
 
 	def rollback(self):
-		if self._connect is None:
+		if self._connect is None or self.con is None:
 			raise DbError('don\'t connect to database')
-		self._connect.rollback()
+		self.con.rollback()
 
 engine = None
 
@@ -292,8 +333,8 @@ class _TransactionCtx(object):
 
 if __name__ == '__main__':
 	logging.basicConfig(level=logging.DEBUG)
-	create_engine('www-data', 'www-data', 'test')
+	create_engine('web-data', 'web-data', 'test')
 	update('drop table if exists user')
-	update('create table user (id int primary key, name text, email text, passwd text, last_modified real)')
+	update('create table user (id int primary key, name text, email text, passwd text, last_modified real);')
 	import doctest
 	doctest.testmod()
