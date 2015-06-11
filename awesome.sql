@@ -53,7 +53,7 @@ create table tags (
 	`id` varchar(50) not null,
     `content` varchar(50) not null,
     primary key (`id`)
-) engine=immodb default charset=utf8;
+) engine=innodb default charset=utf8;
 
 create table ctx_blog_tag (
 	`id` varchar(50) not null,
