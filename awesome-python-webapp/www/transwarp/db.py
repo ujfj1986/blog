@@ -8,7 +8,11 @@ Database operation module.
 '''
 
 import time, uuid, functools, threading, logging
-from common import Dict as Dict
+if __name__ == '__main__':
+    from common import Dict as Dict
+else:
+    from transwarp.common import Dict as Dict
+
 
 def next_id(t=None):
     '''
@@ -116,7 +120,7 @@ def create_engine(user, password, database, host='127.0.0.1', port=3306, **kw):
         raise DBError('Engine is already initialized.')
     params = dict(user=user, password=password, database=database, host=host, port=port)
     defaults = dict(use_unicode=True, charset='utf8', collation='utf8_general_ci', autocommit=False)
-    for k, v in defaults.iteritems():
+    for k, v in defaults.items():
         params[k] = kw.pop(k, v)
     params.update(kw)
     params['buffered'] = True

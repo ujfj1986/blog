@@ -6,8 +6,8 @@ __author__ = "Jiejing Shan"
 ''' ORM module for web app
 	using this module for easy to create User, Comment, Blog .etc from database
 '''
-
-import db, logging, time
+from transwarp import db as db
+import  logging, time
 
 class Field(object):
 	"""define the database's Field"""
@@ -226,28 +226,28 @@ class Model(dict):
 
 	__metaclass__ = ModelMetaClass
 
-   	def __init__(self, **kw):
+	def __init__(self, **kw):
    		super(Model, self).__init__(**kw)
 
-   	def __getattr__(self, key):
+	def __getattr__(self, key):
    		try :
    			return self[key]
    		except KeyError:
    			raise AttributeError(r"'Dict' object has no attribute '%s'" % key)
 
-   	def __setattr__(self, key, value):
+	def __setattr__(self, key, value):
    		self[key] = value
 
-   	@classmethod
-   	def get(cls, pk):
+	@classmethod
+	def get(cls, pk):
    		'''
    		Get by primary key
    		'''
    		d = db.select_one('select * from %s where %s=?' % (cls.__table__, cls.__primary_key__.name), pk)
    		return cls(**d) if d else None
 
-   	@classmethod
-   	def find_first(cls, where, *args):
+	@classmethod
+	def find_first(cls, where, *args):
    		'''
    		Find by where clause and return one result. If multiple results found,
    		only the first one returned. If no results found, return None.
@@ -255,8 +255,8 @@ class Model(dict):
    		d = db.select_one('select * from %s where %s' % (cls.__table__, where), *args)
    		return cls(**d) if d else None
 
-   	@classmethod
-   	def find_by(cls, where, *args):
+	@classmethod
+	def find_by(cls, where, *args):
    		'''
    		Find by where clause and return list.
    		'''
@@ -265,29 +265,29 @@ class Model(dict):
    		d = db.select(sql, *args)
    		return [cls(**i) for l in d]
 
-   	@classmethod
-   	def find_all(cls, *args):
+	@classmethod
+	def find_all(cls, *args):
    		'''
    		Find all and return list.
    		'''
    		L = db.select('select * from %s' % cls.__table__)
    		return [cls(**l) for l in L]
 
-   	@classmethod
-   	def count_all(cls):
+	@classmethod
+	def count_all(cls):
    		'''
    		Get count of rows in table.
    		'''
    		return db.select_int('select count(`%s`) from `%s`' % (cls.__primary_key__.name, cls.__table__))
 
-   	@classmethod
-   	def count_by(cls, where, *args):
+	@classmethod
+	def count_by(cls, where, *args):
    		'''
    		Get count of rows that find by where clause.
    		'''
    		return db.select_int('select count(`%s`) from `%s` where %s' % (cls.__primary_key__.name, cls.__table__, where), *args)
 
-   	def update(self):
+	def update(self):
    		'''
    		Update class's property to database.
    		'''
@@ -308,7 +308,7 @@ class Model(dict):
    		db.update('update `%s` set %s where %s=?' % (self.__table__, ','.join(L), pk), *args)
    		return self
 
-   	def insert(self):
+	def insert(self):
    		'''
    		Insert this object into database.
    		'''
@@ -327,7 +327,7 @@ class Model(dict):
    		db.insert(self.__table__, **args)
    		return self
 
-   	def delete(self):
+	def delete(self):
    		'''
    		Delete row from database.
    		'''
